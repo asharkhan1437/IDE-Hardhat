@@ -121,81 +121,79 @@ export default function EditorPanel({
 
       {/* Editor Area */}
       {openFiles.length > 0 ? (
-        <div className="flex-1 flex overflow-hidden relative">
-          {/* Line Numbers */}
-          {settings.lineNumbers && (
-            <div
-              ref={lineNumbersRef}
-              className="bg-[#1E1E1E] text-[#858585] text-right select-none overflow-hidden border-r border-[#3E3E42]"
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <div className="flex-1 flex overflow-hidden">
+            {/* Line Numbers */}
+            {settings.lineNumbers && (
+              <div
+                ref={lineNumbersRef}
+                className="bg-[#1E1E1E] text-[#858585] text-right select-none overflow-hidden border-r border-[#3E3E42]"
+                style={{
+                  fontFamily: "'Monaco', 'Menlo', 'Consolas', monospace",
+                  fontSize: settings.fontSize,
+                  lineHeight: "1.6",
+                  paddingTop: 8,
+                  paddingRight: 8,
+                  paddingLeft: 8,
+                  minWidth: lineCount > 99 ? 56 : 44,
+                }}
+              >
+                {Array.from({ length: lineCount }, (_, i) => (
+                  <div key={i}>{i + 1}</div>
+                ))}
+              </div>
+            )}
+
+            {/* Textarea */}
+            <textarea
+              ref={textareaRef}
+              value={content}
+              onChange={(e) => onContentChange(e.target.value)}
+              onScroll={handleScroll}
+              onKeyDown={handleKeyDown}
+              className="flex-1 bg-[#1E1E1E] text-[#CCCCCC] border-none resize-none outline-none p-2"
               style={{
                 fontFamily: "'Monaco', 'Menlo', 'Consolas', monospace",
                 fontSize: settings.fontSize,
                 lineHeight: "1.6",
-                paddingTop: 8,
-                paddingRight: 8,
-                paddingLeft: 8,
-                minWidth: lineCount > 99 ? 56 : 44,
+                tabSize: settings.tabSize,
+                wordWrap: settings.wordWrap ? "break-word" : "normal",
+                whiteSpace: settings.wordWrap ? "pre-wrap" : "pre",
               }}
-            >
-              {Array.from({ length: lineCount }, (_, i) => (
-                <div key={i}>{i + 1}</div>
-              ))}
-            </div>
-          )}
+              spellCheck={false}
+            />
+          </div>
 
-          {/* Textarea */}
-          <textarea
-            ref={textareaRef}
-            value={content}
-            onChange={(e) => onContentChange(e.target.value)}
-            onScroll={handleScroll}
-            onKeyDown={handleKeyDown}
-            className="flex-1 bg-[#1E1E1E] text-[#CCCCCC] border-none resize-none outline-none p-2"
-            style={{
-              fontFamily: "'Monaco', 'Menlo', 'Consolas', monospace",
-              fontSize: settings.fontSize,
-              lineHeight: "1.6",
-              tabSize: settings.tabSize,
-              wordWrap: settings.wordWrap ? "break-word" : "normal",
-              whiteSpace: settings.wordWrap ? "pre-wrap" : "pre",
-            }}
-            spellCheck={false}
-          />
-
-          {/* Integrated Status Bar (Web3 + Save Status) */}
-          <div className="absolute bottom-2 right-4 flex items-center gap-3 select-none pointer-events-none">
-            
-            {/* Save Status Indicator */}
-            {saveStatus !== "idle" && (
-              <div className={`flex items-center gap-1.5 text-[10px] font-bold px-2 py-1 rounded border shadow-sm transition-all duration-300 ${
-                saveStatus === "saving" ? "bg-blue-500/10 border-blue-500/50 text-blue-400 animate-pulse" :
-                saveStatus === "saved" ? "bg-green-500/10 border-green-500/50 text-green-400" :
-                "bg-red-500/10 border-red-500/50 text-red-400"
-              }`}>
-                {saveStatus === "saving" && <Loader2 className="w-3 h-3 animate-spin" />}
-                {saveStatus === "saved" && <CheckCircle2 className="w-3 h-3" />}
-                {saveStatus === "error" && <AlertCircle className="w-3 h-3" />}
-                <span className="uppercase tracking-widest">{saveStatus}</span>
-              </div>
-            )}
-
-            {/* Web3 Status */}
-            <div className="flex items-center gap-1.5 text-[10px] font-medium bg-[#252526] px-2 py-1 rounded border border-[#3E3E42]">
+          {/* Docked status bar (VS Code style) — no longer floats over code */}
+          <div className="h-6 bg-[#007ACC] flex items-center justify-between px-3 shrink-0 select-none text-[11px] text-white">
+            <div className="flex items-center gap-1.5">
               {isWalletConnected ? (
                 <>
-                  <ShieldCheck className="w-3 h-3 text-[#4EC9B0]" />
-                  <span className="text-[#4EC9B0] uppercase tracking-wider">Secured Session</span>
+                  <ShieldCheck className="w-3 h-3" />
+                  <span className="uppercase tracking-wider">Secured Session</span>
                 </>
               ) : (
                 <>
-                  <ShieldAlert className="w-3 h-3 text-[#F44747]" />
-                  <span className="text-[#858585] uppercase tracking-wider">Wallet Disconnected</span>
+                  <ShieldAlert className="w-3 h-3 text-yellow-200" />
+                  <span className="uppercase tracking-wider text-white/80">Wallet Disconnected</span>
                 </>
               )}
             </div>
-            
-            <div className="text-[10px] text-[#858585] bg-[#252526] px-2 py-1 rounded border border-[#3E3E42] uppercase tracking-wider">
-              {getLanguage(activeFile)} | Ln {lines.length}
+
+            <div className="flex items-center gap-3">
+              {saveStatus !== "idle" && (
+                <span className={`flex items-center gap-1 uppercase tracking-widest ${
+                  saveStatus === "error" ? "text-yellow-200" : "text-white/90"
+                }`}>
+                  {saveStatus === "saving" && <Loader2 className="w-3 h-3 animate-spin" />}
+                  {saveStatus === "saved" && <CheckCircle2 className="w-3 h-3" />}
+                  {saveStatus === "error" && <AlertCircle className="w-3 h-3" />}
+                  {saveStatus}
+                </span>
+              )}
+              <span className="uppercase tracking-wider">
+                {getLanguage(activeFile)} &nbsp;|&nbsp; Ln {lines.length}
+              </span>
             </div>
           </div>
         </div>

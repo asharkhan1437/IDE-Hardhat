@@ -1,0 +1,8 @@
+services:
+  wildfly:
+    image: quay.io/wildfly/wildfly:latest
+    ports:
+      - "8102:8080"
+      - "9991:9990"
+    command: /opt/jboss/wildfly/bin/standalone.sh -b 0.0.0.0 -bmanagement 0.0.0.0
+    restart: always

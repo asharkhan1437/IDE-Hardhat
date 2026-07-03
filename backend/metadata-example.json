@@ -1,0 +1,17 @@
+{
+  "name": "Reforestation Project — Plot 47B",
+  "description": "1 tonne CO2 offset via verified reforestation, Sumatra, Indonesia.",
+  "image": "ipfs://bafybei...replace_with_project_photo_cid",
+  "external_url": "https://your-project-registry.org/plot-47b",
+  "attributes": [
+    { "trait_type": "Tonnes CO2", "value": 1 },
+    { "trait_type": "Vintage Year", "value": 2026 },
+    { "trait_type": "Verification Body", "value": "Verra (VCS)" },
+    { "trait_type": "Project Type", "value": "Reforestation" },
+    { "trait_type": "Location", "value": "Sumatra, Indonesia" },
+    { "trait_type": "Serial Number", "value": "VCS-2026-47B-001" }
+  ],
+  "certificate_documents": [
+    "ipfs://bafybei...replace_with_certificate_pdf_cid"
+  ]
+}

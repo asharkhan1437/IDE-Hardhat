@@ -25,7 +25,8 @@ export interface EditorSettings {
   minimap: boolean;
   lineNumbers: boolean;
   theme: "dark" | "light";
-  githubToken?: string; // Added for Git Push
+  githubToken?: string;
+  geminiKey?: string;
 }
 
 interface SettingsDialogProps {
@@ -76,20 +77,24 @@ export default function SettingsDialog({
 
         <div className="space-y-6 py-4 overflow-y-auto max-h-[70vh] pr-2 custom-scrollbar">
           
-          {/* GitHub Configuration Section */}
+          {/* AI Audit Key — Groq free tier */}
           <div className="space-y-3 pb-4 border-b border-[#3E3E42]">
-            <Label className="text-[#007ACC] font-bold text-xs uppercase tracking-wider">GitHub Integration</Label>
+            <Label className="text-[#007ACC] font-bold text-xs uppercase tracking-wider">AI Contract Audit</Label>
             <div className="space-y-2">
-              <Label className="text-[#CCCCCC] text-xs">Personal Access Token (PAT)</Label>
-              <Input 
+              <Label className="text-[#CCCCCC] text-xs">Groq API Key <span className="text-green-400">(100% free — no card needed)</span></Label>
+              <Input
                 type="password"
-                placeholder="ghp_xxxxxxxxxxxx"
-                value={settings.githubToken || ""}
-                onChange={(e) => update({ githubToken: e.target.value })}
+                placeholder="gsk_..."
+                value={settings.geminiKey || ""}
+                onChange={(e) => update({ geminiKey: e.target.value })}
                 className="bg-[#1E1E1E] border-[#3E3E42] text-white h-8 text-xs focus:ring-[#007ACC]"
               />
               <p className="text-[10px] text-[#858585]">
-                Required for the "Push to GitHub" feature. Tokens are stored locally in your session.
+                Free Llama3 70B for contract audits. Get key at{" "}
+                <a href="https://console.groq.com/keys" target="_blank" rel="noreferrer" className="text-[#007ACC] hover:underline">
+                  console.groq.com/keys
+                </a>
+                {" "}(also accepts Gemini AIza... keys)
               </p>
             </div>
           </div>
@@ -168,6 +173,20 @@ export default function SettingsDialog({
               </Select>
             </div>
           </div>
+        </div>
+
+        {/* Save button */}
+        <div className="pt-3 border-t border-[#3E3E42] flex items-center justify-between">
+          <p className="text-[10px] text-[#555]">Changes auto-save, but click Save to confirm.</p>
+          <button
+            onClick={() => {
+              onSettingsChange(settings);
+              onOpenChange(false);
+            }}
+            className="px-4 py-1.5 bg-[#007ACC] hover:bg-[#005a9e] text-white text-xs font-semibold rounded transition-colors"
+          >
+            Save & Close
+          </button>
         </div>
       </DialogContent>
     </Dialog>

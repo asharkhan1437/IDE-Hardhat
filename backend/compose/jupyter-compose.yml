@@ -1,0 +1,12 @@
+services:
+  jupyter:
+    image: jupyter/scipy-notebook:latest
+    ports:
+      - "8888:8888"
+    environment:
+      - JUPYTER_TOKEN=zicon
+    volumes:
+      - jupyter_data:/home/jovyan/work
+    restart: always
+volumes:
+  jupyter_data:

@@ -1,113 +1,134 @@
-import { useEffect, useRef, useCallback } from "react"; 
-import { Terminal as XTerminal } from "@xterm/xterm"; 
-import { FitAddon } from "@xterm/addon-fit"; 
-import "@xterm/xterm/css/xterm.css"; 
+import { useEffect, useRef, useCallback } from "react";
+import { Terminal } from "@xterm/xterm";
+import { FitAddon } from "@xterm/addon-fit";
+import { WebLinksAddon } from "@xterm/addon-web-links";
+import "@xterm/xterm/css/xterm.css";
 
-interface TerminalPanelProps { 
-  onTerminalReady?: (terminal: XTerminal) => void; 
-  onData?: (data: string) => void; // Added for interactivity
-} 
+interface TerminalPanelProps {
+  onTerminalReady: (terminal: Terminal) => void;
+  onData?: (data: string) => void;
+}
 
-export default function TerminalPanel({ onTerminalReady, onData }: TerminalPanelProps) { 
-  const terminalRef = useRef<HTMLDivElement>(null); 
-  const xtermRef = useRef<XTerminal | null>(null); 
-  const fitAddonRef = useRef<FitAddon | null>(null); 
-  const initRef = useRef(false); 
+export default function TerminalPanel({ onTerminalReady, onData }: TerminalPanelProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const terminalRef = useRef<Terminal | null>(null);
+  const fitAddonRef = useRef<FitAddon | null>(null);
 
-  const initTerminal = useCallback(() => { 
-    if (!terminalRef.current || initRef.current) return; 
-    initRef.current = true; 
+  const initTerminal = useCallback(() => {
+    if (!containerRef.current) return;
 
-    const xterm = new XTerminal({ 
-      theme: { 
-        background: "#1E1E1E", 
-        foreground: "#CCCCCC", 
-        cursor: "#CCCCCC", 
-        selectionBackground: "#264F78", 
-        black: "#1E1E1E", 
-        red: "#F44747", 
-        green: "#4EC9B0", 
-        yellow: "#DCAA5F", 
-        blue: "#007ACC", 
-        magenta: "#C586C0", 
-        cyan: "#4FC1FF", 
-        white: "#CCCCCC", 
-        brightBlack: "#858585", 
-        brightRed: "#F44747", 
-        brightGreen: "#4EC9B0", 
-        brightYellow: "#DCAA5F", 
-        brightBlue: "#007ACC", 
-        brightMagenta: "#C586C0", 
-        brightCyan: "#4FC1FF", 
-        brightWhite: "#FFFFFF", 
-      }, 
-      fontFamily: "'Monaco', 'Menlo', 'Consolas', monospace", 
-      fontSize: 13, 
-      lineHeight: 1.4, 
-      cursorBlink: true, 
-      convertEol: true, 
-      scrollback: 5000, 
-    }); 
+    // Dispose existing
+    if (terminalRef.current) {
+      terminalRef.current.dispose();
+      terminalRef.current = null;
+    }
 
-    // ── THE INTERACTIVE HOOK ──
-    // This sends your keyboard strokes to the onData prop
-    xterm.onData((data) => {
-      if (onData) onData(data);
+    const terminal = new Terminal({
+      cursorBlink: true,
+      fontSize: 13,
+      fontFamily: "'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace",
+      theme: {
+        background: "#1e1e1e",
+        foreground: "#cccccc",
+        cursor: "#007ACC",
+        selectionBackground: "#264f78",
+        black: "#1e1e1e",
+        red: "#f44747",
+        green: "#4ec9b0",
+        yellow: "#dcdcaa",
+        blue: "#569cd6",
+        magenta: "#c586c0",
+        cyan: "#4fc1ff",
+        white: "#d4d4d4",
+        brightBlack: "#808080",
+        brightRed: "#f44747",
+        brightGreen: "#4ec9b0",
+        brightYellow: "#dcdcaa",
+        brightBlue: "#569cd6",
+        brightMagenta: "#c586c0",
+        brightCyan: "#4fc1ff",
+        brightWhite: "#ffffff",
+      },
+      scrollback: 5000,
+      convertEol: true,
+      allowTransparency: true,
     });
 
-    const fitAddon = new FitAddon(); 
-    xterm.loadAddon(fitAddon); 
-    xterm.open(terminalRef.current); 
+    const fitAddon = new FitAddon();
+    const webLinksAddon = new WebLinksAddon();
 
-    setTimeout(() => { 
-      try { 
-        fitAddon.fit(); 
-      } catch { 
-        // ignore fit errors
-      } 
-    }, 100); 
+    terminal.loadAddon(fitAddon);
+    terminal.loadAddon(webLinksAddon);
+    terminal.open(containerRef.current);
 
-    xtermRef.current = xterm; 
-    fitAddonRef.current = fitAddon; 
+    fitAddonRef.current = fitAddon;
+    terminalRef.current = terminal;
 
-    xterm.writeln("\x1b[1;34m Welcome to Zicon-IDE Terminal \x1b[0m"); 
-    xterm.writeln("\x1b[2m(Terminal is now Interactive)\x1b[0m");
-    xterm.writeln(""); 
+    // Safe fit helper — xterm's fit addon can crash if called before
+    // the renderer has dimensions (container not laid out yet)
+    const safeFit = () => {
+      try {
+        if (!terminalRef.current || !fitAddonRef.current) return;
+        const core = (terminalRef.current as any)._core;
+        if (!core?._renderService?.dimensions?.css?.cell?.width) return;
+        fitAddonRef.current.fit();
+      } catch {
+        // Ignore fit errors — terminal not ready yet
+      }
+    };
 
-    if (onTerminalReady) { 
-      onTerminalReady(xterm); 
-    } 
-  }, [onTerminalReady, onData]); 
+    // Delay first fit until after the DOM has laid out
+    requestAnimationFrame(() => {
+      requestAnimationFrame(safeFit);
+    });
 
-  useEffect(() => { 
-    initTerminal(); 
+    terminal.onData((data) => onData?.(data));
+    onTerminalReady(terminal);
 
-    const handleResize = () => { 
-      if (fitAddonRef.current) { 
-        try { 
-          fitAddonRef.current.fit(); 
-        } catch { 
-          // ignore 
-        } 
-      } 
-    }; 
+    // Enable paste via Ctrl+Shift+V and right-click
+    containerRef.current?.addEventListener("paste", (e: ClipboardEvent) => {
+      const text = e.clipboardData?.getData("text");
+      if (text) terminal.paste(text);
+      e.preventDefault();
+    });
 
-    window.addEventListener("resize", handleResize); 
-    const observer = new ResizeObserver(() => { handleResize(); }); 
+    // Also handle Ctrl+Shift+V explicitly (some browsers need this)
+    containerRef.current?.addEventListener("keydown", (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "V") {
+        navigator.clipboard.readText().then((text) => {
+          if (text) terminal.paste(text);
+        }).catch(() => {});
+        e.preventDefault();
+      }
+    });
 
-    if (terminalRef.current) { 
-      observer.observe(terminalRef.current); 
-    } 
+    terminal.writeln("\x1b[1;32m╔═══════════════════════════════════╗\x1b[0m");
+    terminal.writeln("\x1b[1;32m║     Zicon IDE — Terminal Ready     ║\x1b[0m");
+    terminal.writeln("\x1b[1;32m╚═══════════════════════════════════╝\x1b[0m");
+    terminal.writeln("\x1b[90mPress Run to boot WebContainer\x1b[0m\r\n");
 
-    return () => { 
-      window.removeEventListener("resize", handleResize); 
-      observer.disconnect(); 
-    }; 
-  }, [initTerminal]); 
+    return safeFit;
+  }, [onData, onTerminalReady]);
 
-  return ( 
-    <div className="h-full w-full bg-[#1E1E1E] overflow-hidden"> 
-      <div ref={terminalRef} className="h-full w-full" style={{ padding: "4px 8px" }} /> 
-    </div> 
-  ); 
+  useEffect(() => {
+    const safeFit = initTerminal();
+
+    const observer = new ResizeObserver(() => {
+      safeFit?.();
+    });
+    if (containerRef.current) observer.observe(containerRef.current);
+
+    return () => {
+      observer.disconnect();
+      terminalRef.current?.dispose();
+      terminalRef.current = null;
+      fitAddonRef.current = null;
+    };
+  }, [initTerminal]);
+
+  return (
+    <div className="h-full flex flex-col bg-[#1e1e1e]">
+      <div ref={containerRef} className="flex-1 p-1 overflow-hidden" />
+    </div>
+  );
 }

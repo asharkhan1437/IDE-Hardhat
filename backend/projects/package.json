@@ -1,22 +1,20 @@
 {
-  "name": "carbontokenclean",
+  "name": "zicon-project",
+  "private": true,
   "version": "1.0.0",
-  "main": "index.js",
+  "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "description": "",
-  "devDependencies": {
-    "@nomiclabs/hardhat-ethers": "^2.2.3",
-    "@nomiclabs/hardhat-waffle": "^2.0.6",
-    "ethers": "^5.8.0",
-    "hardhat": "^2.17.0",
-    "solc": "^0.8.20"
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "compile": "npx hardhat compile"
   },
   "dependencies": {
-    "@openzeppelin/contracts": "^5.4.0"
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.2.1",
+    "vite": "^4.5.3"
   }
 }
