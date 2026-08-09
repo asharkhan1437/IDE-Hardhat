@@ -16,6 +16,7 @@ import TerminalPanel from "@/components/TerminalPanel";
 import SettingsDialog from "@/components/SettingsDialog";
 import ExtensionMarketplace from "@/components/ExtensionMarketplace";
 import AIAssistant from "@/components/AIAssistant";
+import CollabUsers from "@/components/CollabUsers";
 import type { EditorSettings } from "@/components/SettingsDialog";
 
 // ── STORAGE KEYS (single source of truth — no more key mismatches) ──
@@ -163,14 +164,19 @@ const EXTENSION_REGISTRY = [
 // ── Helpers ──
 function filesToTree(files: Record<string, string>) {
   const tree: Record<string, any> = {};
-  for (const [path, contents] of Object.entries(files)) {
-    const parts = path.split("/");
+  for (const [rawPath, contents] of Object.entries(files)) {
+    // Sanitize: normalize slashes, strip leading/trailing slashes, drop empty segments
+    const cleanPath = rawPath.replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/+$/, "");
+    const parts = cleanPath.split("/").filter((p) => p.length > 0);
+    if (parts.length === 0) continue; // skip invalid/empty paths entirely
     let current = tree;
     for (let i = 0; i < parts.length - 1; i++) {
-      if (!current[parts[i]]) current[parts[i]] = { directory: {} };
+      if (!current[parts[i]] || !current[parts[i]].directory) {
+        current[parts[i]] = { directory: {} };
+      }
       current = current[parts[i]].directory;
     }
-    current[parts[parts.length - 1]] = { file: { contents } };
+    current[parts[parts.length - 1]] = { file: { contents: contents ?? "" } };
   }
   return tree;
 }
@@ -252,11 +258,15 @@ export default function Index() {
     return null;
   });
 
-  // FIX: single consistent key for owned extensions
+  // Extensions are owned per-wallet, not per-browser. Seed from that wallet's
+  // cached list (if any) — the real source of truth is fetched from the
+  // backend once the wallet reconnects (see reconnectWallet effect below).
   const [ownedExtensions, setOwnedExtensions] = useState<string[]>(() => {
     if (typeof window !== "undefined") {
       try {
-        const saved = localStorage.getItem(EXTENSIONS_KEY);
+        const savedAddress = localStorage.getItem(WALLET_KEY);
+        if (!savedAddress) return [];
+        const saved = localStorage.getItem(`${EXTENSIONS_KEY}:${savedAddress.toLowerCase()}`);
         return saved ? JSON.parse(saved) : [];
       } catch {
         return [];
@@ -294,6 +304,7 @@ export default function Index() {
   // ── Marketplace + wallet extras ──
   const [showMarketplace, setShowMarketplace] = useState(false);
   const [showAIChat, setShowAIChat] = useState(false);
+  const [showCollab, setShowCollab] = useState(false);
   const [walletBalance, setWalletBalance] = useState<string | null>(null);
   const [isWrongNetwork, setIsWrongNetwork] = useState(false);
 
@@ -345,6 +356,7 @@ export default function Index() {
         const accounts: string[] = await provider.send("eth_accounts", []);
         if (accounts.length > 0 && accounts[0].toLowerCase() === savedAddress.toLowerCase()) {
           setWalletAddress(accounts[0]);
+          fetchOwnedExtensions(accounts[0]);
         } else {
           // Account changed or locked — clear stale entry
           localStorage.removeItem(WALLET_KEY);
@@ -357,10 +369,12 @@ export default function Index() {
     reconnectWallet();
   }, []);
 
-  // ── FIX: Persist extensions with correct key ──
+  // ── Persist extensions under this wallet's key, not a global one ──
   useEffect(() => {
-    localStorage.setItem(EXTENSIONS_KEY, JSON.stringify(ownedExtensions));
-  }, [ownedExtensions]);
+    if (walletAddress) {
+      localStorage.setItem(`${EXTENSIONS_KEY}:${walletAddress.toLowerCase()}`, JSON.stringify(ownedExtensions));
+    }
+  }, [ownedExtensions, walletAddress]);
 
   // ── refreshFileTree ──
   const refreshFileTree = useCallback(async () => {
@@ -577,6 +591,31 @@ export default function Index() {
       terminal?.writeln("\x1b[1;33m⚡ Booting WebContainer...\x1b[0m");
       const wc = await WebContainer.boot();
       wcRef.current = wc;
+      // ── Safety net: ensure essential entry-point files exist ──
+      // If index.html, main.jsx, or App.jsx are missing (e.g. from a bad
+      // GitHub clone or accidental deletion), Vite serves a blank page with
+      // no error. Inject the defaults for any that are missing.
+      const currentFiles = { ...filesRef.current };
+      let injectedDefaults = false;
+      const essentialDefaults: Record<string, string> = {
+        "index.html": STARTER_FILES["index.html"],
+        "src/main.jsx": STARTER_FILES["src/main.jsx"],
+        "src/App.jsx": STARTER_FILES["src/App.jsx"],
+        "src/App.css": STARTER_FILES["src/App.css"],
+        "src/index.css": STARTER_FILES["src/index.css"],
+      };
+      for (const [path, defaultContent] of Object.entries(essentialDefaults)) {
+        if (!currentFiles[path] || currentFiles[path].trim() === "") {
+          currentFiles[path] = defaultContent;
+          injectedDefaults = true;
+        }
+      }
+      if (injectedDefaults) {
+        filesRef.current = currentFiles;
+        setFiles(currentFiles);
+        terminal?.writeln("\x1b[1;33m⚠ Missing entry file(s) detected — restored defaults (index.html/main.jsx/App.jsx)\x1b[0m");
+      }
+
       await wc.mount(filesToTree(filesRef.current) as any);
 
       // ── Boot patches — all run in parallel for speed ──
@@ -842,16 +881,42 @@ export default function Index() {
       setWalletAddress(address);
       localStorage.setItem(WALLET_KEY, address);
       toast.success("Wallet connected on Sepolia testnet!");
+
+      // Sync owned extensions from backend — ownership is tied to THIS wallet,
+      // not a generic browser-wide key. Switching wallets must show that
+      // wallet's actual purchases, not whatever was last cached.
+      fetchOwnedExtensions(address);
     } catch (err: any) {
       if (err.code === 4001) toast.error("Connection rejected by user.");
       else toast.error("Wallet connection failed.");
     }
   };
 
+  // ── Fetch owned extensions for a specific wallet from backend ──
+  const fetchOwnedExtensions = useCallback(async (address: string) => {
+    try {
+      const res = await fetch(`http://localhost:5000/api/extensions/owned/${address}`);
+      if (res.ok) {
+        const data = await res.json();
+        const owned = data.owned || [];
+        setOwnedExtensions(owned);
+        // Cache per-wallet so a refresh before backend responds still shows correct state
+        localStorage.setItem(`${EXTENSIONS_KEY}:${address.toLowerCase()}`, JSON.stringify(owned));
+      }
+    } catch {
+      // Backend offline — fall back to this wallet's cached extensions, not the generic key
+      const cached = localStorage.getItem(`${EXTENSIONS_KEY}:${address.toLowerCase()}`);
+      if (cached) {
+        try { setOwnedExtensions(JSON.parse(cached)); } catch {}
+      }
+    }
+  }, []);
+
   const handleDisconnectWallet = () => {
     setWalletAddress(null);
     setWalletBalance(null);
     setIsWrongNetwork(false);
+    setOwnedExtensions([]); // extensions are tied to the wallet, not the browser session
     localStorage.removeItem(WALLET_KEY);
     toast.info("Wallet disconnected");
   };
@@ -937,7 +1002,9 @@ export default function Index() {
         if (data.success) {
           const updated = [...ownedExtensions.filter(e => e !== extensionId), extensionId];
           setOwnedExtensions(updated);
-          localStorage.setItem(EXTENSIONS_KEY, JSON.stringify(updated));
+          if (walletAddress) {
+            localStorage.setItem(`${EXTENSIONS_KEY}:${walletAddress.toLowerCase()}`, JSON.stringify(updated));
+          }
           toast.success(`Extension purchased! Tx: ${tx.hash.slice(0, 10)}...`);
           return { success: true };
         }
@@ -1018,11 +1085,21 @@ export default function Index() {
       });
       const data = await response.json();
       if (data.success) {
-        setFiles(data.files);
+        // Backend returns paths relative to the clone root (e.g. "src/App.jsx"),
+        // not prefixed with the repo name. Prefix them here and MERGE into the
+        // existing files instead of replacing — otherwise cloning wipes out
+        // every other project/contract/artifact currently open in the IDE.
+        const prefixed: Record<string, string> = {};
+        for (const [relPath, content] of Object.entries(data.files as Record<string, string>)) {
+          prefixed[`${data.repoName}/${relPath}`] = content;
+        }
+        const mergedFiles = { ...filesRef.current, ...prefixed };
+        setFiles(mergedFiles);
+        setFileTree(buildFileTree(mergedFiles));
         setCurrentRepoUrl(repoUrl);
         setCurrentRepoName(data.repoName);
         if (wcRef.current) {
-          await wcRef.current.mount(filesToTree(data.files) as any);
+          await wcRef.current.mount(filesToTree(mergedFiles) as any);
           await refreshFileTree();
         }
         toast.success(`Cloned ${data.repoName}!`, { id: loadingToast });
@@ -1086,9 +1163,17 @@ export default function Index() {
       });
       const data = await res.json();
       if (data.success) {
-        setFiles(data.files);
+        // Same fix as clone — backend returns paths relative to the repo root,
+        // prefix + merge instead of replacing every open file in the IDE.
+        const prefixed: Record<string, string> = {};
+        for (const [relPath, content] of Object.entries(data.files as Record<string, string>)) {
+          prefixed[`${currentRepoName}/${relPath}`] = content;
+        }
+        const mergedFiles = { ...filesRef.current, ...prefixed };
+        setFiles(mergedFiles);
+        setFileTree(buildFileTree(mergedFiles));
         if (wcRef.current) {
-          await wcRef.current.mount(filesToTree(data.files) as any);
+          await wcRef.current.mount(filesToTree(mergedFiles) as any);
         }
         await refreshFileTree();
         toast.success("Pulled latest changes!", { id: loadingToast });
@@ -1242,7 +1327,6 @@ export default function Index() {
     if (ownedExtensions.includes(extId)) {
       const updated = ownedExtensions.filter((id) => id !== extId);
       setOwnedExtensions(updated);
-      localStorage.setItem(EXTENSIONS_KEY, JSON.stringify(updated));
       terminalRef.current?.writeln(`\r\n\x1b[1;31m[System] ${ext.name} uninstalled.\x1b[0m`);
       return toast.info(`${ext.name} uninstalled.`);
     }
@@ -1323,10 +1407,8 @@ export default function Index() {
         terminalRef.current?.writeln(`\x1b[1;32m[Hardhat] Configured for Sepolia testnet.\x1b[0m\r\n`);
       }
 
-      // ── FIX: Persist with correct key ──
       const updatedExtensions = [...ownedExtensions, extId];
       setOwnedExtensions(updatedExtensions);
-      localStorage.setItem(EXTENSIONS_KEY, JSON.stringify(updatedExtensions));
 
       toast.success(`${ext.name} activated!`, { id: toastId });
     } catch (err: any) {
@@ -1919,12 +2001,18 @@ console.log('\\n\\x1b[1;32m✅ Compiled ' + count + ' contract(s) successfully!\
       });
       const data = await response.json();
       if (data.success && data.files) {
-        setFiles(data.files);
+        const prefixed: Record<string, string> = {};
+        for (const [relPath, content] of Object.entries(data.files as Record<string, string>)) {
+          prefixed[`${projectName}/${relPath}`] = content;
+        }
+        const mergedFiles = { ...filesRef.current, ...prefixed };
+        setFiles(mergedFiles);
+        setFileTree(buildFileTree(mergedFiles));
         setCurrentRepoName(projectName);
-        const solFiles = Object.keys(data.files).filter((f) => f.endsWith(".sol"));
+        const solFiles = Object.keys(prefixed).filter((f) => f.endsWith(".sol"));
         if (solFiles.length > 0) { setActiveFile(solFiles[0]); setOpenFiles(solFiles); }
         if (wcRef.current) {
-          for (const [path, content] of Object.entries(data.files)) {
+          for (const [path, content] of Object.entries(prefixed)) {
             const parts = path.split("/");
             if (parts.length > 1) {
               await wcRef.current.fs.mkdir(parts.slice(0, -1).join("/"), { recursive: true });
@@ -2009,6 +2097,7 @@ console.log('\\n\\x1b[1;32m✅ Compiled ' + count + ' contract(s) successfully!\
             checkOwnership={checkOwnership}
             onOpenMarketplace={() => setShowMarketplace(true)}
             onOpenAIChat={() => setShowAIChat(true)}
+            onOpenCollab={() => setShowCollab(true)}
           />
         </ResizablePanel>
 
@@ -2102,7 +2191,7 @@ console.log('\\n\\x1b[1;32m✅ Compiled ' + count + ' contract(s) successfully!\
             </ResizablePanelGroup>
 
             {/* Overlay: Marketplace / AI Chat — takes FULL column height, Editor+Terminal stay alive behind it */}
-            {(showMarketplace || showAIChat) && (
+            {(showMarketplace || showAIChat || showCollab) && (
               <div className="absolute inset-0 z-20 bg-[#1e1e1e]">
                 {showAIChat ? (
                   <AIAssistant
@@ -2110,6 +2199,16 @@ console.log('\\n\\x1b[1;32m✅ Compiled ' + count + ' contract(s) successfully!\
                     activeFileName={activeFile}
                     activeFileContent={files[activeFile] || ""}
                   />
+                ) : showCollab ? (
+                  <div className="h-full flex flex-col overflow-hidden">
+                    <div className="h-9 bg-[#252526] border-b border-[#3E3E42] flex items-center justify-between px-4 shrink-0">
+                      <span className="text-xs text-[#858585] uppercase tracking-wider font-semibold">Team Session</span>
+                      <button onClick={() => setShowCollab(false)} className="text-[#555] hover:text-white text-xs px-2 py-1 hover:bg-[#333] rounded transition-colors">✕ Close</button>
+                    </div>
+                    <div className="flex-1 overflow-hidden">
+                      <CollabUsers walletAddress={walletAddress} onConnectWallet={handleConnectWallet} />
+                    </div>
+                  </div>
                 ) : (
                   <div className="h-full flex flex-col overflow-hidden">
                     <div className="h-9 bg-[#252526] border-b border-[#3E3E42] flex items-center justify-between px-4 shrink-0">

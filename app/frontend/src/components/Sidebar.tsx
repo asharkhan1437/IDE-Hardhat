@@ -20,6 +20,7 @@ import {
   Lock,
   Store,
   Bot,
+  Users,
   GitFork,
   ExternalLink,
   Globe,
@@ -67,6 +68,7 @@ interface SidebarProps {
   onInstallExtension: (id: string, price: string) => void;
   onOpenMarketplace: () => void;
   onOpenAIChat: () => void;
+  onOpenCollab?: () => void;
   onGitHubLogin: () => void;
   walletAddress: string | null;
   checkOwnership: (id: string) => boolean;
@@ -91,6 +93,7 @@ export default function Sidebar({
   onInstallExtension,
   onOpenMarketplace,
   onOpenAIChat,
+  onOpenCollab,
   walletAddress,
   checkOwnership,
 }: SidebarProps) {
@@ -469,8 +472,8 @@ export default function Sidebar({
         {fileTree.map((node) => renderNode(node, ".", 0))}
       </div>
 
-      {/* SECTION 3.5: AI ASSISTANT */}
-      <div className="border-t border-[#3E3E42] bg-[#1e1e1e] px-2 py-2 shrink-0">
+      {/* SECTION 3.5: AI ASSISTANT + COLLAB */}
+      <div className="border-t border-[#3E3E42] bg-[#1e1e1e] px-2 py-2 shrink-0 space-y-1">
         <button
           onClick={onOpenAIChat}
           className="w-full flex items-center gap-2 px-2 py-1.5 rounded bg-[#252526] border border-[#3E3E42] hover:border-[#D97757] transition-colors group"
@@ -479,6 +482,16 @@ export default function Sidebar({
           <span className="text-[11px] text-[#CCCCCC] group-hover:text-white">AI Assistant</span>
           <span className="ml-auto text-[9px] text-[#555]">Claude</span>
         </button>
+        {onOpenCollab && (
+          <button
+            onClick={onOpenCollab}
+            className="w-full flex items-center gap-2 px-2 py-1.5 rounded bg-[#252526] border border-[#3E3E42] hover:border-[#007ACC] transition-colors group"
+          >
+            <Users className="w-3.5 h-3.5 text-[#007ACC]" />
+            <span className="text-[11px] text-[#CCCCCC] group-hover:text-white">Team Session</span>
+            <span className="ml-auto text-[9px] text-[#555]">MetaMask</span>
+          </button>
+        )}
       </div>
 
       {/* SECTION 4: MARKETPLACE PREVIEW (collapsible) */}

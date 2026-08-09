@@ -93,9 +93,7 @@ export default function PreviewPanel({ previewUrl, isLoading, loadingStage }: Pr
     if (e.key === "Escape") { setUrlInput(""); setShowQuick(false); }
   };
 
-  // Anything that ISN'T the live WebContainer dev server is either a localhost
-  // Docker service or an external site (Cursor, NotebookLM) — both typically
-  // block iframing via X-Frame-Options/CSP, so show "Open in Browser" for both.
+  // Anything that isn't the live WebContainer dev server blocks iframes
   const isIframeBlocked = (url: string) => url !== previewUrl;
 
   return (
@@ -200,17 +198,11 @@ export default function PreviewPanel({ previewUrl, isLoading, loadingStage }: Pr
             <Loader2 className="w-8 h-8 text-[#007ACC] animate-spin" />
             <p className="text-sm text-[#858585]">{loadingStage || "Booting WebContainer..."}</p>
             <div className="flex items-center gap-1.5 text-[10px] text-[#444]">
-              <span className={loadingStage?.includes("Booting") ? "text-[#007ACC]" : "text-green-500"}>
-                ● Boot
-              </span>
+              <span className={loadingStage?.includes("Booting") ? "text-[#007ACC]" : "text-green-500"}>● Boot</span>
               <span>→</span>
-              <span className={loadingStage?.includes("Installing") ? "text-[#007ACC]" : loadingStage?.includes("Starting") ? "text-green-500" : ""}>
-                ● Install
-              </span>
+              <span className={loadingStage?.includes("Installing") ? "text-[#007ACC]" : loadingStage?.includes("Starting") ? "text-green-500" : ""}>● Install</span>
               <span>→</span>
-              <span className={loadingStage?.includes("Starting") ? "text-[#007ACC]" : ""}>
-                ● Dev Server
-              </span>
+              <span className={loadingStage?.includes("Starting") ? "text-[#007ACC]" : ""}>● Dev Server</span>
             </div>
           </div>
         ) : displayUrl && isIframeBlocked(displayUrl) ? (
@@ -250,7 +242,7 @@ export default function PreviewPanel({ previewUrl, isLoading, loadingStage }: Pr
         ) : displayUrl ? (
           // WebContainer URL — safe to iframe
           <div
-            className="h-full bg-white shadow-2xl transition-all duration-300 overflow-hidden"
+            className="h-full bg-[#1e1e1e] shadow-2xl transition-all duration-300 overflow-hidden relative"
             style={{ width: DEVICE_SIZES[device].width, maxWidth: "100%", minHeight: "100%" }}
           >
             <iframe
@@ -259,7 +251,17 @@ export default function PreviewPanel({ previewUrl, isLoading, loadingStage }: Pr
               src={displayUrl}
               className="w-full h-full border-0"
               title="Preview"
+              allow="cross-origin-isolated"
               sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+              onLoad={(e) => {
+                // Try to detect blank/errored frames
+                try {
+                  const frame = e.currentTarget as HTMLIFrameElement;
+                  if (frame.contentDocument?.body?.innerHTML === '') {
+                    frame.style.background = '#1e1e1e';
+                  }
+                } catch {}
+              }}
             />
           </div>
         ) : (

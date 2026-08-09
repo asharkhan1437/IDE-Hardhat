@@ -772,4 +772,69 @@ app.get('/api/extensions/status/:id', async (req, res) => {
   }
 });
 
+// ── MULTI-USER SESSION SYSTEM ──
+// Tracks connected users by wallet address — anyone with the link can join
+
+const sessions = {}; // { sessionId: { users: [{ address, joinedAt, lastSeen }], createdAt } }
+
+// Generate or get session for this IDE instance
+app.post('/api/session/create', (req, res) => {
+  const { address, signature, message } = req.body;
+  if (!address) return res.status(400).json({ success: false, message: 'Address required' });
+  try {
+    const recovered = ethers.verifyMessage(message, signature);
+    if (recovered.toLowerCase() !== address.toLowerCase()) {
+      return res.status(401).json({ success: false, message: 'Invalid signature' });
+    }
+    // Use a fixed session ID based on the project (or generate one)
+    const sessionId = 'zicon-main';
+    if (!sessions[sessionId]) {
+      sessions[sessionId] = { users: [], createdAt: Date.now() };
+    }
+    // Add user if not already present
+    const existing = sessions[sessionId].users.find(u => u.address.toLowerCase() === address.toLowerCase());
+    if (!existing) {
+      sessions[sessionId].users.push({ address, joinedAt: Date.now(), lastSeen: Date.now() });
+    } else {
+      existing.lastSeen = Date.now();
+    }
+    res.json({ success: true, sessionId, users: sessions[sessionId].users });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// Get current users in session
+app.get('/api/session/users', (req, res) => {
+  const sessionId = 'zicon-main';
+  if (!sessions[sessionId]) return res.json({ users: [] });
+  // Remove users inactive for more than 5 minutes
+  const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
+  sessions[sessionId].users = sessions[sessionId].users.filter(u => u.lastSeen > fiveMinutesAgo);
+  res.json({ users: sessions[sessionId].users });
+});
+
+// Heartbeat — keep user alive in session
+app.post('/api/session/heartbeat', (req, res) => {
+  const { address } = req.body;
+  const sessionId = 'zicon-main';
+  if (sessions[sessionId]) {
+    const user = sessions[sessionId].users.find(u => u.address.toLowerCase() === address?.toLowerCase());
+    if (user) user.lastSeen = Date.now();
+  }
+  res.json({ success: true });
+});
+
+// Leave session
+app.post('/api/session/leave', (req, res) => {
+  const { address } = req.body;
+  const sessionId = 'zicon-main';
+  if (sessions[sessionId]) {
+    sessions[sessionId].users = sessions[sessionId].users.filter(
+      u => u.address.toLowerCase() !== address?.toLowerCase()
+    );
+  }
+  res.json({ success: true });
+});
+
 app.listen(5000, () => console.log(`🚀 Zicon Backend running at http://localhost:5000`));
